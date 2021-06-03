@@ -1,6 +1,17 @@
 import { wrapToVdom } from './utils'
 import { findDOM, compareTwoVdom } from './react-dom'
+import { REACT_FORWARD_REF_TYPE, REACT_CONTEXT, REACT_PROVIDER } from './contants'
 function createElement(type, config, children) {
+  let ref
+  let key
+  if (config) {
+    ref = config.ref
+    key = config.key
+    delete config.ref
+    delete config.key
+    delete config.__self
+    delete config.__source
+  }
   let props = {...config}
   if (arguments.length > 3) {
     children = Array.prototype.slice.call(arguments, 2).map(wrapToVdom)
@@ -8,8 +19,21 @@ function createElement(type, config, children) {
   props.children = wrapToVdom(children)
   return {
     type,
-    props
+    props,
+    ref,
+    key
   }
+}
+
+function cloneElement(oldElement, newProps, children) {
+  if (arguments.length > 3) {
+    children = Array.prototype.slice.call(arguments, 2).map(wrapToVdom)
+  }
+  if (children !== null && children !== undefined) {
+    children = wrapToVdom(children)
+  }
+  let props = {...oldElement.props, ...newProps, children}
+  return {...oldElement, props}
 }
 export let updateQueue = {
   isBatchingUpdate: false,
@@ -48,7 +72,8 @@ class Updater {
     pendingStates.length = 0
     return newState
   }
-  emitUpdate() {
+  emitUpdate(nextProps) {
+    this.nextProps = nextProps
     if (updateQueue.isBatchingUpdate) {
       updateQueue.updaters.push(this)
     } else {
@@ -56,17 +81,33 @@ class Updater {
     }
   }
   updateComponent() {
-    let { classInstance, pendingStates } = this
-    if (pendingStates.length > 0) {
-      shouldUpdate(classInstance, this.getState())
+    let { classInstance, pendingStates, nextProps } = this
+    if (nextProps || pendingStates.length > 0) {
+      shouldUpdate(classInstance, nextProps, this.getState())
       this.callbacks.forEach(callback => callback())
       this.callbacks.length = 0
     }
   }
 }
-function shouldUpdate(classInstance, nextState) {
+function shouldUpdate(classInstance, nextProps, nextState) {
+  let willUpdate = true
+  if (classInstance.shouldComponentUpdate
+    && !classInstance.shouldComponentUpdate(nextProps, nextState)) {
+      willUpdate = false
+  }
+  if (willUpdate && classInstance.componentWillUpdate) {
+    classInstance.componentWillUpdate()
+  }
+  if (nextProps) {
+    classInstance.props = nextProps
+  }
+  if (classInstance.constructor.getDerivedStateFromProps) {
+    nextState = classInstance.constructor.getDerivedStateFromProps(nextProps, classInstance.state)
+  }
   classInstance.state = nextState
-  classInstance.forceUpdate()
+  if (willUpdate) {
+    classInstance.forceUpdate()
+  }
 }
 class Component {
   static isReactComponent = {}
@@ -82,15 +123,67 @@ class Component {
   // 再获取新的虚拟dom
   // 进行比较
   forceUpdate() {
+    if (this.constructor.contextType) {
+      this.context = this.constructor.contextType._currentValue
+    }
     let oldRenderVdom = this.oldRenderVdom
     let newRenderVdom = this.render()
     let oldDom = findDOM(oldRenderVdom)
-    compareTwoVdom(oldDom.parentNode, oldDom, newRenderVdom)
+    let extraArgs = {}
+    if (this.getSnapshotBeforeUpdate) {
+      extraArgs = this.getSnapshotBeforeUpdate()
+    }
+    compareTwoVdom(oldDom.parentNode, oldRenderVdom, newRenderVdom)
     this.oldRenderVdom = newRenderVdom
+    if (this.componentDidUpdate) {
+      this.componentDidUpdate(this.props, this.state, extraArgs)
+    }
   }
+}
+
+function createRef() {
+  return {
+    current: null
+  }
+}
+
+function forwardRef(render) {
+  return {
+    $$typeof: REACT_FORWARD_REF_TYPE,
+    render
+  }
+}
+// function createContext() {
+//   const context = {Provider, Consumer}
+//   function Provider({value, children}){
+//     context._value = value
+//     return children
+//   }
+//   function Consumer({children}) {
+//     return children(context._value)
+//   }
+//   return context
+// }
+function createContext() {
+  let context = {
+    $$typeof: REACT_CONTEXT
+  }
+  context.Provider = {
+    $$typeof: REACT_PROVIDER,
+    _context: context
+  }
+  context.Consumer = {
+    $$typeof: REACT_CONTEXT,
+    _context: context
+  }
+  return context
 }
 const React = {
   createElement,
-  Component
+  Component,
+  createRef,
+  forwardRef,
+  createContext,
+  cloneElement
 }
 export default React

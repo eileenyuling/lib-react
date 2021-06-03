@@ -64,14 +64,9 @@ class Page extends React.Component {
       changeColor: this.changeColor
     }
     return <Provider value={value}>
-
       <div style={{border: `1px solid ${this.state.color}`}}>
         主页
-        {this.state.color === 'red'
-        ? <Header />
-        : null
-        }
-
+        <Header />
         <Main />
       </div>
     </Provider>
