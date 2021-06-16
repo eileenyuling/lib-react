@@ -1,6 +1,19 @@
-import { wrapToVdom } from './utils'
-import { findDOM, compareTwoVdom } from './react-dom'
-import { REACT_FORWARD_REF_TYPE, REACT_CONTEXT, REACT_PROVIDER } from './contants'
+import { wrapToVdom, shawllowEqual } from './utils'
+import {
+  findDOM,
+  compareTwoVdom,
+  useState,
+  useMemo,
+  useCallback,
+  useReducer,
+  useEffect,
+  useLayoutEffect,
+  useRef } from './react-dom'
+import {
+  REACT_FORWARD_REF_TYPE,
+  REACT_CONTEXT,
+  REACT_PROVIDER,
+  REACT_MEMO } from './contants'
 function createElement(type, config, children) {
   let ref
   let key
@@ -16,7 +29,9 @@ function createElement(type, config, children) {
   if (arguments.length > 3) {
     children = Array.prototype.slice.call(arguments, 2).map(wrapToVdom)
   }
-  props.children = wrapToVdom(children)
+  if (children !== undefined) {
+    props.children = wrapToVdom(children)
+  }
   return {
     type,
     props,
@@ -141,6 +156,12 @@ class Component {
   }
 }
 
+class PureComponent extends Component {
+  shouldComponentUpdate(nextProps, nextState) {
+    return (!shawllowEqual(nextProps, this.props) || !shawllowEqual(nextState, this.state))
+  }
+}
+
 function createRef() {
   return {
     current: null
@@ -178,12 +199,38 @@ function createContext() {
   }
   return context
 }
+function memo(type, compare=shawllowEqual) {
+  return {
+    $$typeof: REACT_MEMO,
+    type,
+    compare
+  }
+}
+
+function useContext(context) {
+  return context._currentValue
+}
+
+function useImperativeHandle(ref, factory, deps) {
+  ref.current = factory()
+}
 const React = {
   createElement,
   Component,
+  PureComponent,
   createRef,
   forwardRef,
   createContext,
-  cloneElement
+  cloneElement,
+  memo,
+  useState,
+  useMemo,
+  useCallback,
+  useReducer,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useImperativeHandle
 }
 export default React
